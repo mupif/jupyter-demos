@@ -1,1 +1,2 @@
 git+https://github.com/mupif/mupif.git@pydantic
+python-3.8
