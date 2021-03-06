@@ -99,8 +99,8 @@ class ThermalModel(mupif.model.Model):
         self.tria = False
 
         self.tria = False
-        self.dirichletModelEdges = []
-        self.convectionModelEdges = []
+        self.bcOnModelEdges = []
+
 
         self.xl = None
         self.yl = None
@@ -131,8 +131,7 @@ class ThermalModel(mupif.model.Model):
 
     def readInput(self, tria=False):
         self.tria = tria
-        self.dirichletModelEdges = []
-        self.convectionModelEdges = []
+        self.bcOnModelEdges = []
 
         lines = []
         try:
@@ -162,10 +161,10 @@ class ThermalModel(mupif.model.Model):
             code = rec[1]
             temperature = float(rec[2])
             if code == 'D':
-                self.dirichletModelEdges.append((edge, temperature))
+                self.bcOnModelEdges.append((edge, 'D', temperature, None))
             elif code == 'C':
                 h = float(rec[3])
-                self.convectionModelEdges.append((edge, temperature, h))
+                self.bcOnModelEdges.append((edge, 'C', temperature, h))
 
         # print (self.convectionModelEdges)
 
@@ -195,52 +194,52 @@ class ThermalModel(mupif.model.Model):
         #     |                   |
         #     ----------1---------
         #
-
-        # self.dirichletModelEdges=(3,4,1)#
-        self.dirichletBCs = {}  # key is node number, value is prescribed temperature
-        for (ide, value) in self.dirichletModelEdges:
-            # print ("Dirichlet", ide)
-            if ide == 1:
-                for i in range(self.nx + 1):
-                    self.dirichletBCs[i * (self.ny + 1)] = value
-            elif ide == 2:
-                for i in range(self.ny + 1):
-                    self.dirichletBCs[(self.ny + 1) * self.nx + i] = value
-            elif ide == 3:
-                for i in range(self.nx + 1):
-                    self.dirichletBCs[self.ny + (self.ny + 1) * i] = value
-            elif ide == 4:
-                for i in range(self.ny + 1):
-                    self.dirichletBCs[i] = value
-
+       
+        self.dirichletBCs = {}  # key is node number, value is prescribed temperature       
         # self.convectionModelEdges=(2,)
         self.convectionBC = []
-        for (ice, value, h) in self.convectionModelEdges:
-            # print ("Convection", ice)
+        for (ice, bcCode, value, h) in self.bcOnModelEdges:
             if ice == 1:
-                for i in range(self.nx):
-                    if self.tria:
-                        self.convectionBC.append((2 * self.ny * i, 0, h, value))
-                    else:
-                        self.convectionBC.append((self.ny * i, 0, h, value))
+                if (bcCode == 'C'):
+                    for i in range(self.nx):
+                        if self.tria:
+                            self.convectionBC.append((2 * self.ny * i, 0, h, value))
+                        else:
+                            self.convectionBC.append((self.ny * i, 0, h, value))
+                elif (bcCode == 'D'):
+                    for i in range(self.nx + 1):
+                        self.dirichletBCs[i * (self.ny + 1)] = value
             elif ice == 2:
-                for i in range(self.ny):
-                    if self.tria:
-                        self.convectionBC.append(((self.nx - 1) * 2 * self.ny + 2 * i, 1, h, value))
-                    else:
-                        self.convectionBC.append(((self.nx - 1) * self.ny + i, 1, h, value))
+                if (bcCode == 'C'):
+                    for i in range(self.ny):
+                        if self.tria:
+                            self.convectionBC.append(((self.nx - 1) * 2 * self.ny + 2 * i, 1, h, value))
+                        else:
+                            self.convectionBC.append(((self.nx - 1) * self.ny + i, 1, h, value))
+                elif (bcCode == 'D'):
+                    for i in range(self.ny + 1):
+                        self.dirichletBCs[(self.ny + 1) * self.nx + i] = value
             elif ice == 3:
-                for i in range(self.nx):
-                    if self.tria:
-                        self.convectionBC.append((2 * self.ny * (i + 1) - 1, 1, h, value))
-                    else:
-                        self.convectionBC.append((self.ny * (i + 1) - 1, 2, h, value))
+                if (bcCode == 'C'):
+                    for i in range(self.nx):
+                        if self.tria:
+                            self.convectionBC.append((2 * self.ny * (i + 1) - 1, 1, h, value))
+                        else:
+                            self.convectionBC.append((self.ny * (i + 1) - 1, 2, h, value))
+                elif (bcCode == 'D'):
+                    for i in range(self.nx + 1):
+                        self.dirichletBCs[self.ny + (self.ny + 1) * i] = value
             elif ice == 4:
-                for i in range(self.ny):
-                    if self.tria:
-                        self.convectionBC.append((2 * i + 1, 2, h, value))
-                    else:
-                        self.convectionBC.append((i, 3, h, value))
+                if (bcCode == 'C'):
+                    for i in range(self.ny):
+                        if self.tria:
+                            self.convectionBC.append((2 * i + 1, 2, h, value))
+                        else:
+                            self.convectionBC.append((i, 3, h, value))
+                elif (bcCode == 'D'):
+                    for i in range(self.ny + 1):
+                        self.dirichletBCs[i] = value
+                                
 
         self.loc = np.zeros(self.mesh.getNumberOfVertices(), dtype=np.int32)
         self.neq = 0  # number of unknowns
@@ -595,27 +594,29 @@ class ThermalModel(mupif.model.Model):
                 if objectID == edge_id:
                     edge_index = edge_ids.index(edge_id)+1
                     edge_found = False
-                    for edge in self.convectionModelEdges:
+                    for edge in self.bcOnModelEdges:
                         if edge[0] == edge_index:
-                            idx = self.convectionModelEdges.index(edge)
-                            self.convectionModelEdges[idx] = (edge_index, property.getValue()[0], edge[2])
+                            idx = self.bcOnModelEdges.index(edge)
+                            self.bcOnModelEdges[idx] = (edge_index, 'C', property.getValue()[0], 1.)
                             edge_found = True
                     if not edge_found:
-                        self.convectionModelEdges.append((edge_index, property.getValue()[0], 1.))
-
+                        self.bcOnModelEdges.append((edge_index, 'C', property.getValue()[0], 1.))
+                    # need to remove dirichlet  
+            
+            
             # Dirichlet
             edge_ids = ['Dirichlet bottom', 'Dirichlet right', 'Dirichlet top', 'Dirichlet left']
             for edge_id in edge_ids:
                 if objectID == edge_id:
                     edge_index = edge_ids.index(edge_id)+1
                     edge_found = False
-                    for edge in self.dirichletModelEdges:
+                    for edge in self.bcOnModelEdges:
                         if edge[0] == edge_index:
-                            idx = self.dirichletModelEdges.index(edge)
-                            self.dirichletModelEdges[idx] = (edge_index, property.getValue()[0])
+                            idx = self.bcOnModelEdges.index(edge)
+                            self.bcOnModelEdges[idx] = (edge_index, 'D',property.getValue()[0], None)
                             edge_found = True
                     if not edge_found:
-                        self.dirichletModelEdges.append((edge_index, property.getValue()[0]))
+                        self.bcOnModelEdges.append((edge_index, 'D', property.getValue()[0], None))
 
         else:
             raise mupif.apierror.APIError('Unknown property ID')
