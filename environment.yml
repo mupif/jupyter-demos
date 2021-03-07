@@ -1,40 +1,21 @@
 name: mupif-jupyter
 channels:
   - conda-forge
+  - defaults
 dependencies:
   - python=3.8
-  - numpy
-  - itk
-  - scooby>=0.5.1
-  - meshio>=4.0.3, <5.0
-  - matplotlib
-  - transforms3d==0.3.1
-  - appdirs
-  - pyqt
-  - imageio>=2.5.0
-  - imageio-ffmpeg
-  - colorcet
-  - cmocean
-  - itkwidgets>=0.25.2
-  - tqdm
-  - pytest
-  - pytest-cov
-  - pytest-qt
-  - codecov
-  - hypothesis>=5.8.0
-  - pip
-  - trimesh
-  - rtree
-  - pyembree
-  - pip
+  - lxml
   - pip:
-    - ipywidgets>=7.1.2
-    - jupyterlab
-    - numpy
-    - six
-    - zstandard
-    - ipywebrtc
-    - bqplot
-    - plotly>=3.3.0
-    - pytest-memprof
+    - git+git://github.com/mupif/mupif@dev
+    - git+git://github.com/pyvista/pyvista@master
+    - scipy
+    - matplotlib
+    - pyct
+    - pandas>=1.1.4
+    - trimesh
     - ipyvtk-simple>=0.1.2
+    - itkwidgets>=0.25.2
+    - colorcet
+    - cmocean
+    - imageio>=2.5.0
+    - imageio-ffmpeg
