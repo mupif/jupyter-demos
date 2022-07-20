@@ -1,17 +1,18 @@
+import Pyro5
 import sys
-sys.path.append('.')
+sys.path.append('../..')
+sys.path.append('..')
 import models
 from mupif import *
 import mupif as mp
-import time
 import logging
 
 log = logging.getLogger()
 
-# prototype of workflow implementation of stationary thermo-mechanical solver
-class tmworkflow(mp.workflow.Workflow):
 
-    def __init__(self, metadata={}):
+class Example06(mp.Workflow):
+
+    def __init__(self, metadata=None):
         """
         Initializes the workflow.
         """
@@ -26,7 +27,7 @@ class tmworkflow(mp.workflow.Workflow):
                         'Name': 'edge temperature',
                         'Type': 'mupif.Property',
                         'Required': False,
-                        'Type_ID': 'mupif.PropertyID.PID_Temperature',
+                        'Type_ID': 'mupif.DataID.PID_Temperature',
                         'Obj_ID': [
                             'Cauchy top',
                             'Cauchy bottom',
@@ -37,69 +38,67 @@ class tmworkflow(mp.workflow.Workflow):
                             'Dirichlet left',
                             'Dirichlet right'
                         ],
-                        'Units': 'K' 
+                        'Units': 'K',
+                        "Set_at": "timestep",
+                        "ValueType": "Scalar"
                     }
                 ],
             'Outputs': [
-                {'Type': 'mupif.Field', 'Type_ID': 'mupif.FieldID.FID_Temperature', 'Name': 'Temperature field',
+                {'Type': 'mupif.Field', 'Type_ID': 'mupif.DataID.FID_Temperature', 'Name': 'Temperature field',
                  'Description': 'Temperature field on 2D domain', 'Units': 'degC'},
-                {'Type': 'mupif.Field', 'Type_ID': 'mupif.FieldID.FID_Displacement', 'Name': 'Displacement field',
+                {'Type': 'mupif.Field', 'Type_ID': 'mupif.DataID.FID_Displacement', 'Name': 'Displacement field',
                  'Description': 'Displacement field on 2D domain', 'Units': 'm'}
+            ],
+            'Models': [
+                {
+                    'Name': 'thermal',
+                    'Module': 'models',
+                    'Class': 'ThermalModel'
+                },
+                {
+                    'Name': 'mechanical',
+                    'Module': 'models',
+                    'Class': 'MechanicalModel'
+                }
             ]
         }
         super().__init__(metadata=MD)
         self.updateMetadata(metadata)
 
-        self.thermalSolver = models.ThermalModel()
-        self.mechanicalSolver = models.MechanicalModel()
+    def initialize(self, workdir='', metadata=None, validateMetaData=True, **kwargs):
+        super().initialize(workdir=workdir, metadata=metadata, validateMetaData=validateMetaData, **kwargs)
 
-        self.registerModel(self.thermalSolver, 'thermal')
-        self.registerModel(self.mechanicalSolver, 'mechanical')
+        thermalInputFile = mp.PyroFile(filename='inputT.in', mode="rb", dataID=mp.DataID.ID_InputFile)
+        # self.daemon.register(thermalInputFile)
+        self.getModel('thermal').set(thermalInputFile)
 
-    def initialize(self, file='', workdir='', targetTime=0*mp.Q.s, metadata={}, validateMetaData=True):
-        super().initialize(file=file, workdir=workdir, targetTime=targetTime, metadata=metadata,
-                                          validateMetaData=validateMetaData)
-
-        passingMD = {
-            'Execution': {
-                'ID': self.getMetadata('Execution.ID'),
-                'Use_case_ID': self.getMetadata('Execution.Use_case_ID'),
-                'Task_ID': self.getMetadata('Execution.Task_ID')
-            }
-        }
-
-        self.thermalSolver.initialize('inputT.in', '.', metadata=passingMD)
-        self.mechanicalSolver.initialize('inputM.in', '.', metadata=passingMD)
-        #self.mechanicalSolver.printMetadata(nonEmpty=False)
+        mechanicalInputFile = mp.PyroFile(filename='inputM.in', mode="rb", dataID=mp.DataID.ID_InputFile)
+        # self.daemon.register(mechanicalInputFile)
+        self.getModel('mechanical').set(mechanicalInputFile)
 
     def solveStep(self, istep, stageID=0, runInBackground=False):
-        self.thermalSolver.solveStep(istep, stageID, runInBackground)
-        self.mechanicalSolver.setField(self.thermalSolver.getField(mp.FieldID.FID_Temperature, istep.getTime()))
-        self.mechanicalSolver.solveStep(istep, stageID, runInBackground)
+        self.getModel('thermal').solveStep(istep, stageID, runInBackground)
+        self.getModel('mechanical').set(self.getModel('thermal').get(DataID.FID_Temperature, istep.getTime()))
+        self.getModel('mechanical').solveStep(istep, stageID, runInBackground)
 
-    def getField(self, fieldID, time, objectID=0):
-        if fieldID == mp.FieldID.FID_Temperature:
-            return self.thermalSolver.getField(fieldID, time, objectID)
-        elif fieldID == mp.FieldID.FID_Displacement:
-            return self.mechanicalSolver.getField(fieldID, time, objectID)
+    def get(self, objectTypeID, time=None, objectID=""):
+        if objectTypeID == DataID.FID_Temperature:
+            return self.getModel('thermal').get(objectTypeID, time, objectID)
+        elif objectTypeID == DataID.FID_Displacement:
+            return self.getModel('mechanical').get(objectTypeID, time, objectID)
         else:
-            raise mp.apierror.APIError('Unknown field ID')
-    def setProperty(self, property, objectID=0):
-        if property.getPropertyID() == mp.PropertyID.PID_Temperature:
-            self.thermalSolver.setProperty(property, objectID)
+            raise apierror.APIError('Unknown field ID')
+    def set(self, property, objectID=0):
+        if property.getPropertyID() == mp.DataID.PID_Temperature:
+            self.getModel('thermal').set(property, objectID)
         else:
             raise mp.apierror.APIError('Unknown property ID')
 
     def getCriticalTimeStep(self):
-        return 1*mp.Q.s
-
-    def terminate(self):
-        self.thermalSolver.terminate()
-        self.mechanicalSolver.terminate()
-        super().terminate()
+        return 1*mp.U.s
 
     def getApplicationSignature(self):
-        return "TM workflow 1.0"
+        return "Example06 workflow 1.0"
 
     def getAPIVersion(self):
         return "1.0"

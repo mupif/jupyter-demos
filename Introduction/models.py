@@ -1,3 +1,4 @@
+import os
 import mupif
 import mupif as mp
 import Pyro5
@@ -5,7 +6,6 @@ import meshgen
 import math
 import numpy as np
 import time as timeTime
-import os
 import logging
 
 log = logging.getLogger('ex01_models')
@@ -24,88 +24,107 @@ def getline(f):
 class ThermalModel(mupif.model.Model):
     """ Simple stationary heat transport solver on rectangular domains"""
 
-    def __init__(self, metadata={}):
-        if len(metadata) == 0:
-            metadata = {
-                'Name': 'Stationary thermal problem',
-                'ID': 'Thermo-1',
-                'Description': 'Stationary heat conduction using finite elements on rectangular domain',
-                'Version_date': '1.0.0, Feb 2019',
-                'Geometry': '2D rectangle',
-                'Boundary_conditions': 'Dirichlet, Neumann',
-                'Inputs': [
+    def __init__(self, metadata=None):
+        super().__init__(metadata=metadata)
+        if metadata is None:
+            MD = {
+                "Name": "Stationary thermal problem",
+                "ID": "Thermo-1",
+                "Description": "Stationary heat conduction using finite elements on rectangular domain",
+                "Version_date": "1.0.0, Feb 2019",
+                "Geometry": "2D rectangle",
+                "Boundary_conditions": "Dirichlet, Neumann",
+                "Inputs": [
                     {
-                        'Name': 'edge temperature',
-                        'Type': 'mupif.Property',
-                        'Required': False,
-                        'Type_ID': 'mupif.PropertyID.PID_Temperature',
-                        'Obj_ID': [
-                            'Cauchy top',
-                            'Cauchy bottom',
-                            'Cauchy left',
-                            'Cauchy right',
-                            'Dirichlet top',
-                            'Dirichlet bottom',
-                            'Dirichlet left',
-                            'Dirichlet right'
-                        ]
+                        "Name": "edge temperature",
+                        "Type": "mupif.Property",
+                        "Required": False,
+                        "Type_ID": "mupif.DataID.PID_Temperature",
+                        "Units": "degC",
+                        "Obj_ID": [
+                            "Cauchy top",
+                            "Cauchy bottom",
+                            "Cauchy left",
+                            "Cauchy right",
+                            "Dirichlet top",
+                            "Dirichlet bottom",
+                            "Dirichlet left",
+                            "Dirichlet right"
+                        ],
+                        "Set_at": "timestep",
+                        "ValueType": "Scalar"
+                    },
+                    {
+                        "Name": "Input file",
+                        "Type": "mupif.PyroFile",
+                        "Required": True,
+                        "Type_ID": "mupif.DataID.ID_InputFile",
+                        "Obj_ID": "input_file_thermal",
+                        "Set_at": "initialization",
+                        "Units": "none"
                     }
                 ],
-                'Outputs': [
+                "Outputs": [
                     {
-                        'Name': 'temperature',
-                        'Type_ID': 'mupif.FieldID.FID_Temperature',
-                        'Type': 'mupif.Field',
-                        'Required': False
+                        "Name": "temperature",
+                        "Type_ID": "mupif.DataID.FID_Temperature",
+                        "Type": "mupif.Field",
+                        "Required": False,
+                        "Units": "degC"
                     }
                 ],
-                'Solver': {
-                    'Software': 'own',
-                    'Type': 'Finite elements',
-                    'Accuracy': 'Medium',
-                    'Sensitivity': 'Low',
-                    'Complexity': 'Low',
-                    'Robustness': 'High',
-                    'Estim_time_step': 1,
-                    'Estim_comp_time': 1.e-3,
-                    'Estim_execution_cost': 0.01,
-                    'Estim_personnel_cost': 0.01,
-                    'Required_expertise': 'None',
-                    'Language': 'Python',
-                    'License': 'LGPL',
-                    'Creator': 'Borek Patzak',
-                    'Version_date': '1.0.0, Feb 2019',
-                    'Documentation': 'Felippa: Introduction to finite element methods, 2004',
+                "Solver": {
+                    "Software": "own",
+                    "Type": "Finite elements",
+                    "Accuracy": "Medium",
+                    "Sensitivity": "Low",
+                    "Complexity": "Low",
+                    "Robustness": "High",
+                    "Estim_time_step_s": 1,
+                    "Estim_comp_time_s": 1.e-3,
+                    "Estim_execution_cost_EUR": 0.01,
+                    "Estim_personnel_cost_EUR": 0.01,
+                    "Required_expertise": "None",
+                    "Language": "Python",
+                    "License": "LGPL",
+                    "Creator": "Borek Patzak",
+                    "Version_date": "1.0.0, Feb 2019",
+                    "Documentation": "Felippa: Introduction to finite element methods, 2004",
                 },
-                'Physics': {
-                    'Type': 'Continuum',
-                    'Entity': ['Finite volume'],
-                    'Equation': ['Heat balance'],
-                    'Equation_quantities': ['Heat flow'],
-                    'Relation_description': ['Fick\'s first law'],
-                    'Relation_formulation': ['Flow induced by thermal gradient on isotropic material'],
-                    'Representation': 'Finite volumes'
+                "Physics": {
+                    "Type": "Continuum",
+                    "Entity": "Finite volume",
+                    "Equation": ["Heat balance"],
+                    "Equation_quantities": ["Heat flow"],
+                    "Relation_description": ["Fick's first law"],
+                    "Relation_formulation": ["Flow induced by thermal gradient on isotropic material"],
+                    "Representation": "Finite volumes"
+                },
+                "Execution": {
+                    'ID': '0',
+                    'Use_case_ID': '0',
+                    'Task_ID': '0'
                 }
             }
-        super().__init__(metadata=metadata)
+            self.updateMetadata(MD)
         self.mesh = None
         self.morphologyType = None
         self.conductivity = mupif.property.ConstantProperty(
-            value=(1.,),
-            propID=mupif.PropertyID.PID_effective_conductivity,
+            value=1.,
+            propID=mupif.DataID.PID_effective_conductivity,
             valueType=mupif.ValueType.Scalar,
             unit=mupif.U['W/m/K']
         )
         self.tria = False
 
         self.tria = False
-        self.bcOnModelEdges = []
+        self.dirichletModelEdges = []
+        self.convectionModelEdges = []
 
-
-        self.xl = None
-        self.yl = None
-        self.nx = None
-        self.ny = None
+        self.xl = 5
+        self.yl = 1
+        self.nx = 10
+        self.ny = 4
 
         self.dirichletBCs = None
         self.convectionBC = None
@@ -123,25 +142,25 @@ class ThermalModel(mupif.model.Model):
         self.b = None
         self.bp = None
 
-    def initialize(self, file='', workdir='', metadata={}, validateMetaData=False):
-        super().initialize(file, workdir, metadata, validateMetaData)
+        self.input_file = None
 
-        if self.file != "":
-            self.readInput()
+    def initialize(self, workdir='', metadata=None, validateMetaData=True, **kwargs):
+        super().initialize(workdir=workdir, metadata=metadata, validateMetaData=validateMetaData, **kwargs)
 
-    def readInput(self, tria=False):
+    def readInput(self, filename, tria=False):
         self.tria = tria
-        self.bcOnModelEdges = []
+        self.dirichletModelEdges = []
+        self.convectionModelEdges = []
 
         lines = []
         try:
-            for line in open(self.workDir + os.path.sep + self.file, 'r'):
+            for line in open(filename, 'r'):
                 if not line.startswith('#'):
                     lines.append(line)
         except Exception as e:
-            log.info('Current working directory is %s, file is %s' % (self.workDir, self.file))
+            log.info('Current working directory is %s' % self.workDir)
             log.exception(e)
-            exit(1)
+            raise
 
         line = lines.pop(0)
         size = line.split()
@@ -161,10 +180,10 @@ class ThermalModel(mupif.model.Model):
             code = rec[1]
             temperature = float(rec[2])
             if code == 'D':
-                self.bcOnModelEdges.append((edge, 'D', temperature, None))
+                self.dirichletModelEdges.append((edge, temperature))
             elif code == 'C':
                 h = float(rec[3])
-                self.bcOnModelEdges.append((edge, 'C', temperature, h))
+                self.convectionModelEdges.append((edge, temperature, h))
 
         # print (self.convectionModelEdges)
 
@@ -194,52 +213,52 @@ class ThermalModel(mupif.model.Model):
         #     |                   |
         #     ----------1---------
         #
-       
-        self.dirichletBCs = {}  # key is node number, value is prescribed temperature       
+
+        # self.dirichletModelEdges=(3,4,1)#
+        self.dirichletBCs = {}  # key is node number, value is prescribed temperature
+        for (ide, value) in self.dirichletModelEdges:
+            # print ("Dirichlet", ide)
+            if ide == 1:
+                for i in range(self.nx + 1):
+                    self.dirichletBCs[i * (self.ny + 1)] = value
+            elif ide == 2:
+                for i in range(self.ny + 1):
+                    self.dirichletBCs[(self.ny + 1) * self.nx + i] = value
+            elif ide == 3:
+                for i in range(self.nx + 1):
+                    self.dirichletBCs[self.ny + (self.ny + 1) * i] = value
+            elif ide == 4:
+                for i in range(self.ny + 1):
+                    self.dirichletBCs[i] = value
+
         # self.convectionModelEdges=(2,)
         self.convectionBC = []
-        for (ice, bcCode, value, h) in self.bcOnModelEdges:
+        for (ice, value, h) in self.convectionModelEdges:
+            # print ("Convection", ice)
             if ice == 1:
-                if (bcCode == 'C'):
-                    for i in range(self.nx):
-                        if self.tria:
-                            self.convectionBC.append((2 * self.ny * i, 0, h, value))
-                        else:
-                            self.convectionBC.append((self.ny * i, 0, h, value))
-                elif (bcCode == 'D'):
-                    for i in range(self.nx + 1):
-                        self.dirichletBCs[i * (self.ny + 1)] = value
+                for i in range(self.nx):
+                    if self.tria:
+                        self.convectionBC.append((2 * self.ny * i, 0, h, value))
+                    else:
+                        self.convectionBC.append((self.ny * i, 0, h, value))
             elif ice == 2:
-                if (bcCode == 'C'):
-                    for i in range(self.ny):
-                        if self.tria:
-                            self.convectionBC.append(((self.nx - 1) * 2 * self.ny + 2 * i, 1, h, value))
-                        else:
-                            self.convectionBC.append(((self.nx - 1) * self.ny + i, 1, h, value))
-                elif (bcCode == 'D'):
-                    for i in range(self.ny + 1):
-                        self.dirichletBCs[(self.ny + 1) * self.nx + i] = value
+                for i in range(self.ny):
+                    if self.tria:
+                        self.convectionBC.append(((self.nx - 1) * 2 * self.ny + 2 * i, 1, h, value))
+                    else:
+                        self.convectionBC.append(((self.nx - 1) * self.ny + i, 1, h, value))
             elif ice == 3:
-                if (bcCode == 'C'):
-                    for i in range(self.nx):
-                        if self.tria:
-                            self.convectionBC.append((2 * self.ny * (i + 1) - 1, 1, h, value))
-                        else:
-                            self.convectionBC.append((self.ny * (i + 1) - 1, 2, h, value))
-                elif (bcCode == 'D'):
-                    for i in range(self.nx + 1):
-                        self.dirichletBCs[self.ny + (self.ny + 1) * i] = value
+                for i in range(self.nx):
+                    if self.tria:
+                        self.convectionBC.append((2 * self.ny * (i + 1) - 1, 1, h, value))
+                    else:
+                        self.convectionBC.append((self.ny * (i + 1) - 1, 2, h, value))
             elif ice == 4:
-                if (bcCode == 'C'):
-                    for i in range(self.ny):
-                        if self.tria:
-                            self.convectionBC.append((2 * i + 1, 2, h, value))
-                        else:
-                            self.convectionBC.append((i, 3, h, value))
-                elif (bcCode == 'D'):
-                    for i in range(self.ny + 1):
-                        self.dirichletBCs[i] = value
-                                
+                for i in range(self.ny):
+                    if self.tria:
+                        self.convectionBC.append((2 * i + 1, 2, h, value))
+                    else:
+                        self.convectionBC.append((i, 3, h, value))
 
         self.loc = np.zeros(self.mesh.getNumberOfVertices(), dtype=np.int32)
         self.neq = 0  # number of unknowns
@@ -265,8 +284,10 @@ class ThermalModel(mupif.model.Model):
                 ineq += 1
         # print (self.loc)
 
-    def getField(self, fieldID, time, objectID=0):
-        if fieldID == mupif.FieldID.FID_Temperature:
+    def get(self, objectTypeID, time=None, objectID=""):
+
+        # Field
+        if objectTypeID == mupif.DataID.FID_Temperature:
             values = []
             for i in range(self.mesh.getNumberOfVertices()):
                 if time.getValue() == 0.0:  # put zeros everywhere
@@ -275,13 +296,15 @@ class ThermalModel(mupif.model.Model):
                     values.append((self.T[self.loc[i]],))
             return mupif.field.Field(
                 mesh=self.mesh,
-                fieldID=mupif.FieldID.FID_Temperature,
+                fieldID=mupif.DataID.FID_Temperature,
                 valueType=mupif.ValueType.Scalar,
                 unit=mupif.U.C,
                 time=time,
                 value=values
             )
-        elif fieldID == mupif.FieldID.FID_Material_number:
+
+        # Field
+        elif objectTypeID == mupif.DataID.FID_Material_number:
             values = []
             for e in self.mesh.cells():
                 if self.isInclusion(e) and self.morphologyType == 'Inclusion':
@@ -291,15 +314,36 @@ class ThermalModel(mupif.model.Model):
             # print (values)
             return mupif.field.Field(
                 mesh=self.mesh,
-                fieldID=mupif.FieldID.FID_Material_number,
+                fieldID=mupif.DataID.FID_Material_number,
                 valueType=mupif.ValueType.Scalar,
-                unit=mp.Q.none, # PQ.getDimensionlessUnit(),
+                unit=mp.U.none,
                 time=time,
                 value=values,
                 fieldType=mupif.field.FieldType.FT_cellBased
             )
+
+        # Property
+        elif objectTypeID == mupif.DataID.PID_effective_conductivity:
+            # average reactions from solution - use nodes on edge 4 (coordinate x==0.)
+            sumQ = 0.
+            for i in range(self.mesh.getNumberOfVertices()):
+                coord = (self.mesh.getVertex(i).getCoordinates())
+                if coord[0] < 1.e-6:
+                    ipneq = self.loc[i]
+                    if ipneq >= self.neq:
+                        sumQ -= self.r[ipneq - self.neq]
+            eff_conductivity = sumQ / self.yl * self.xl / (
+                        self.dirichletBCs[(self.ny + 1) * (self.nx + 1) - 1] - self.dirichletBCs[0])
+            return mupif.property.ConstantProperty(
+                value=eff_conductivity,
+                propID=mupif.DataID.PID_effective_conductivity,
+                valueType=mupif.ValueType.Scalar,
+                unit=mp.U['W/m/K'],
+                time=time
+            )
+
         else:
-            raise mupif.APIError('Unknown field ID')
+            raise mupif.APIError('Unknown DataID')
 
     def isInclusion(self, e):
         vertices = e.getVertices()
@@ -359,7 +403,7 @@ class ThermalModel(mupif.model.Model):
 
         log.info("Assembling ...")
         for e in mesh.cells():
-            A_e = self.compute_elem_conductivity(e, self.conductivity.getValue(tstep.getTime())[0])
+            A_e = self.compute_elem_conductivity(e, self.conductivity.getValue(tstep.getTime()))
 
             # Assemble
             for i in range(ndofs):  # loop of dofs
@@ -557,72 +601,55 @@ class ThermalModel(mupif.model.Model):
                     A_e[i, j] += K[i, j]
         return A_e
 
-    def getProperty(self, propID, time, objectID=0):
-        if propID == mupif.PropertyID.PID_effective_conductivity:
-            # average reactions from solution - use nodes on edge 4 (coordinate x==0.)
-            sumQ = 0.
-            for i in range(self.mesh.getNumberOfVertices()):
-                coord = (self.mesh.getVertex(i).getCoordinates())
-                if coord[0] < 1.e-6:
-                    ipneq = self.loc[i]
-                    if ipneq >= self.neq:
-                        sumQ -= self.r[ipneq - self.neq]
-            eff_conductivity = sumQ / self.yl * self.xl / (
-                        self.dirichletBCs[(self.ny + 1) * (self.nx + 1) - 1] - self.dirichletBCs[0])
-            return mupif.property.ConstantProperty(
-                value=eff_conductivity,
-                propID=mupif.PropertyID.PID_effective_conductivity,
-                valueType=mupif.ValueType.Scalar,
-                unit=mp.U['W/m/K'],
-                time=time,
-                objectID=0
-            )
-        else:
-            raise mupif.APIError('Unknown property ID')
+    def set(self, obj, objectID=""):
+        if obj.isInstance(mp.PyroFile):
+            if obj.getDataID() == mp.DataID.ID_InputFile:
+                print("Downloading the input file..")
+                mp.PyroFile.copy(obj, self.workDir + os.path.sep + 'tmin.in')
+                print("Download finished.")
+                self.readInput(self.workDir + os.path.sep + 'tmin.in')
 
-    def setProperty(self, property, objectID=0):
-        if property.getPropertyID() == mupif.PropertyID.PID_effective_conductivity:
-            # remember the mapped value
-            self.conductivity = property.inUnitsOf('W/m/K')
-            # log.info("Assigning effective conductivity %f" % self.conductivity.getValue() )
+        if obj.isInstance(mp.Property):
+            if obj.getPropertyID() == mupif.DataID.PID_effective_conductivity:
+                # remember the mapped value
+                self.conductivity = obj.inUnitsOf('W/m/K')
+                # log.info("Assigning effective conductivity %f" % self.conductivity.getValue() )
 
-        elif property.getPropertyID() == mupif.PropertyID.PID_Temperature:
+            elif obj.getPropertyID() == mupif.DataID.PID_Temperature:
 
-            # convection
-            edge_ids = ['Cauchy bottom', 'Cauchy right', 'Cauchy top', 'Cauchy left']
-            for edge_id in edge_ids:
-                if objectID == edge_id:
-                    edge_index = edge_ids.index(edge_id)+1
-                    edge_found = False
-                    for edge in self.bcOnModelEdges:
-                        if edge[0] == edge_index:
-                            idx = self.bcOnModelEdges.index(edge)
-                            self.bcOnModelEdges[idx] = (edge_index, 'C', property.getValue()[0], 1.)
-                            edge_found = True
-                    if not edge_found:
-                        self.bcOnModelEdges.append((edge_index, 'C', property.getValue()[0], 1.))
-                    # need to remove dirichlet  
-            
-            
-            # Dirichlet
-            edge_ids = ['Dirichlet bottom', 'Dirichlet right', 'Dirichlet top', 'Dirichlet left']
-            for edge_id in edge_ids:
-                if objectID == edge_id:
-                    edge_index = edge_ids.index(edge_id)+1
-                    edge_found = False
-                    for edge in self.bcOnModelEdges:
-                        if edge[0] == edge_index:
-                            idx = self.bcOnModelEdges.index(edge)
-                            self.bcOnModelEdges[idx] = (edge_index, 'D',property.getValue()[0], None)
-                            edge_found = True
-                    if not edge_found:
-                        self.bcOnModelEdges.append((edge_index, 'D', property.getValue()[0], None))
+                # convection
+                edge_ids = ['Cauchy bottom', 'Cauchy right', 'Cauchy top', 'Cauchy left']
+                for edge_id in edge_ids:
+                    if objectID == edge_id:
+                        edge_index = edge_ids.index(edge_id)+1
+                        edge_found = False
+                        for edge in self.convectionModelEdges:
+                            if edge[0] == edge_index:
+                                idx = self.convectionModelEdges.index(edge)
+                                self.convectionModelEdges[idx] = (edge_index, obj.getValue()[0], edge[2])
+                                edge_found = True
+                        if not edge_found:
+                            self.convectionModelEdges.append((edge_index, obj.getValue()[0], 1.))
 
-        else:
-            raise mupif.apierror.APIError('Unknown property ID')
+                # Dirichlet
+                edge_ids = ['Dirichlet bottom', 'Dirichlet right', 'Dirichlet top', 'Dirichlet left']
+                for edge_id in edge_ids:
+                    if objectID == edge_id:
+                        edge_index = edge_ids.index(edge_id)+1
+                        edge_found = False
+                        for edge in self.dirichletModelEdges:
+                            if edge[0] == edge_index:
+                                idx = self.dirichletModelEdges.index(edge)
+                                self.dirichletModelEdges[idx] = (edge_index, obj.getValue()[0])
+                                edge_found = True
+                        if not edge_found:
+                            self.dirichletModelEdges.append((edge_index, obj.getValue()[0]))
+
+            else:
+                raise mupif.apierror.APIError('Unknown property ID')
 
     def getCriticalTimeStep(self):
-        return 100*mp.Q.s
+        return 100*mp.U.s
 
     def getAssemblyTime(self, tstep):
         return tstep.getTime()
@@ -637,65 +664,83 @@ class ThermalNonstatModel(ThermalModel):
 
     def __init__(self):
         metadata = {
-            'Name': 'Non-stationary thermal problem',
-            'ID': 'NonStatThermo-1',
-            'Description': 'Non-stationary heat conduction using finite elements on a rectangular domain',
-            'Version_date': '1.0.0, Feb 2019',
-            'Representation': 'Finite volumes',
-            'Geometry': '2D rectangle',
-            'Boundary_conditions': 'Dirichlet, Neumann',
-            'Inputs': [
+            "Name": "Non-stationary thermal problem",
+            "ID": "NonStatThermo-1",
+            "Description": "Non-stationary heat conduction using finite elements on a rectangular domain",
+            "Version_date": "1.0.0, Feb 2019",
+            "Representation": "Finite volumes",
+            "Geometry": "2D rectangle",
+            "Boundary_conditions": "Dirichlet, Neumann",
+            "Inputs": [
                 {
-                    'Name': 'edge temperature',
-                    'Type': 'mupif.Property',
-                    'Required': False,
-                    'Type_ID': 'mupif.PropertyID.PID_Temperature',
-                    'Obj_ID': [
-                        'Cauchy top',
-                        'Cauchy bottom',
-                        'Cauchy left',
-                        'Cauchy right',
-                        'Dirichlet top',
-                        'Dirichlet bottom',
-                        'Dirichlet left',
-                        'Dirichlet right'
-                    ]
+                    "Name": "edge temperature",
+                    "Type": "mupif.Property",
+                    "Required": False,
+                    "Type_ID": "mupif.DataID.PID_Temperature",
+                    "Units": "degC",
+                    "Obj_ID": [
+                        "Cauchy top",
+                        "Cauchy bottom",
+                        "Cauchy left",
+                        "Cauchy right",
+                        "Dirichlet top",
+                        "Dirichlet bottom",
+                        "Dirichlet left",
+                        "Dirichlet right"
+                    ],
+                    "Set_at": "timestep",
+                    "ValueType": "Scalar"
+                },
+                {
+                    "Name": "Input file",
+                    "Type": "mupif.PyroFile",
+                    "Required": True,
+                    "Type_ID": "mupif.DataID.ID_InputFile",
+                    "Obj_ID": "input_file_thermal_nonstat",
+                    "Set_at": "initialization",
+                    "Units": "none"
                 }
             ],
-            'Outputs': [
+            "Outputs": [
                 {
-                    'Name': 'temperature',
-                    'Type_ID': 'mupif.FieldID.FID_Temperature',
-                    'Type': 'mupif.Field',
-                    'Required': False
+                    "Name": "temperature",
+                    "Type_ID": "mupif.DataID.FID_Temperature",
+                    "Type": "mupif.Field",
+                    "Required": False,
+                    "Units": "degC",
                 }
             ],
-            'Solver': {
-                'Software': 'own',
-                'Type': 'Finite elements',
-                'Accuracy': 'Medium',
-                'Sensitivity': 'Low',
-                'Complexity': 'Low',
-                'Robustness': 'High',
-                'Estim_time_step': 1,
-                'Estim_comp_time': 1.e-3,
-                'Estim_execution_cost': 0.01,
-                'Estim_personnel_cost': 0.01,
-                'Required_expertise': 'None',
-                'Language': 'Python',
-                'License': 'LGPL',
-                'Creator': 'Borek Patzak',
-                'Version_date': '1.0.0, Feb 2019',
-                'Documentation': 'Felippa: Introduction to finite element methods, 2004',
+            "Solver": {
+                "Software": "own",
+                "Type": "Finite elements",
+                "Accuracy": "Medium",
+                "Sensitivity": "Low",
+                "Complexity": "Low",
+                "Robustness": "High",
+                "Estim_time_step_s": 1,
+                "Estim_comp_time_s": 1.e-3,
+                "Estim_execution_cost_EUR": 0.01,
+                "Estim_personnel_cost_EUR": 0.01,
+                "Required_expertise": "None",
+                "Language": "Python",
+                "License": "LGPL",
+                "Creator": "Borek Patzak",
+                "Version_date": "1.0.0, Feb 2019",
+                "Documentation": "Felippa: Introduction to finite element methods, 2004",
             },
-            'Physics': {
-                'Type': 'Continuum',
-                'Entity': ['Finite volume'],
-                'Equation': ['Heat balance'],
-                'Equation_quantities': ['Heat flow'],
-                'Relation_description': ['Fick\'s first law'],
-                'Relation_formulation': ['Flow induced by thermal gradient on isotropic material'],
-                'Representation': 'Finite volumes'
+            "Physics": {
+                "Type": "Continuum",
+                "Entity": "Finite volume",
+                "Equation": ["Heat balance"],
+                "Equation_quantities": ["Heat flow"],
+                "Relation_description": ["Fick's first law"],
+                "Relation_formulation": ["Flow induced by thermal gradient on isotropic material"],
+                "Representation": "Finite volumes"
+            },
+            "Execution": {
+                'ID': '0',
+                'Use_case_ID': '0',
+                'Task_ID': '0'
             }
         }
         super().__init__(metadata=metadata)
@@ -710,11 +755,8 @@ class ThermalNonstatModel(ThermalModel):
         self.P = None
         self.Tp = None
 
-    def initialize(self, file='', workdir='', metadata={}, validateMetaData=False):
-        super().initialize(file, workdir, metadata, validateMetaData)
-
-        if self.file != "":
-            self.readInput(tria=True)
+    def initialize(self, workdir='', metadata=None, validateMetaData=True, **kwargs):
+        super().initialize(workdir=workdir, metadata=metadata, validateMetaData=validateMetaData, **kwargs)
 
     def getApplicationSignature(self):
         return "Nonstat-Thermal-demo-solver, ver 1.0"
@@ -723,7 +765,7 @@ class ThermalNonstatModel(ThermalModel):
         return
 
     def getCriticalTimeStep(self):
-        return 100*mp.Q.s
+        return 100*mp.U.s
 
     def getAssemblyTime(self, tstep):
         return tstep.getTime() - tstep.getTimeIncrement() * self.Tau
@@ -806,7 +848,7 @@ class ThermalNonstatModel(ThermalModel):
 
             log.info("Assembling ...")
             for e in mesh.cells():
-                K_e = self.compute_elem_conductivity(e, self.conductivity.getValue(tstep.getTime())[0])
+                K_e = self.compute_elem_conductivity(e, self.conductivity.getValue(tstep.getTime()))
                 C_e = self.compute_elem_capacity(e)
                 A_e = K_e * self.Tau + C_e / dt
                 P_e = np.subtract(C_e / dt, K_e * (1. - self.Tau))
@@ -953,55 +995,72 @@ class MechanicalModel(mupif.model.Model):
 
     def __init__(self):
         metadata = {
-            'Name': 'Plane stress linear elastic',
-            'ID': 'Mechanical-1',
-            'Description': 'Plane stress problem with linear elastic thermo-elastic material',
-            'Version_date': '1.0.0, Feb 2019',
-            'Geometry': '2D rectangle',
-            'Boundary_conditions': 'Dirichlet',
-            'Inputs': [
+            "Name": "Plane stress linear elastic",
+            "ID": "Mechanical-1",
+            "Description": "Plane stress problem with linear elastic thermo-elastic material",
+            "Version_date": "1.0.0, Feb 2019",
+            "Geometry": "2D rectangle",
+            "Boundary_conditions": "Dirichlet",
+            "Inputs": [
                 {
-                    'Name': 'temperature',
-                    'Type_ID': 'mupif.FieldID.FID_Temperature',
-                    'Type': 'mupif.Field',
-                    'Required': True
+                    "Name": "temperature",
+                    "Type_ID": "mupif.DataID.FID_Temperature",
+                    "Type": "mupif.Field",
+                    "Units": "degC",
+                    "Required": True,
+                    "Set_at": "timestep"
+                },
+                {
+                    "Name": "Input file",
+                    "Type": "mupif.PyroFile",
+                    "Required": True,
+                    "Type_ID": "mupif.DataID.ID_InputFile",
+                    "Obj_ID": "input_file_mechanical",
+                    "Set_at": "initialization",
+                    "Units": "none"
                 }
             ],
-            'Outputs': [
+            "Outputs": [
                 {
-                    'Name': 'displacement',
-                    'Type_ID': 'mupif.FieldID.FID_Displacement',
-                    'Type': 'mupif.Field',
-                    'Required': False
+                    "Name": "displacement",
+                    "Type_ID": "mupif.DataID.FID_Displacement",
+                    "Type": "mupif.Field",
+                    "Required": False,
+                    "Units": "m",
                 }
             ],
-            'Solver': {
-                'Software': 'own',
-                'Type': 'Finite elements',
-                'Accuracy': 'Medium',
-                'Sensitivity': 'Low',
-                'Complexity': 'Low',
-                'Robustness': 'High',
-                'Estim_time_step': 1,
-                'Estim_comp_time': 1.e-3,
-                'Estim_execution_cost': 0.01,
-                'Estim_personnel_cost': 0.01,
-                'Required_expertise': 'None',
-                'Language': 'Python',
-                'License': 'LGPL',
-                'Creator': 'Borek Patzak',
-                'Version_date': '1.0.0, Feb 2019',
-                'Documentation': 'Felippa: Introduction to finite element methods, 2004',
+            "Solver": {
+                "Software": "own",
+                "Type": "Finite elements",
+                "Accuracy": "Medium",
+                "Sensitivity": "Low",
+                "Complexity": "Low",
+                "Robustness": "High",
+                "Estim_time_step_s": 1,
+                "Estim_comp_time_s": 1.e-3,
+                "Estim_execution_cost_EUR": 0.01,
+                "Estim_personnel_cost_EUR": 0.01,
+                "Required_expertise": "None",
+                "Language": "Python",
+                "License": "LGPL",
+                "Creator": "Borek Patzak",
+                "Version_date": "1.0.0, Feb 2019",
+                "Documentation": "Felippa: Introduction to finite element methods, 2004",
             },
-            'Physics': {
-                'Type': 'Continuum',
-                'Entity': ['Finite volume'],
-                'Equation': ['Equilibrium'],
-                'Equation_quantities': ['Displacement'],
-                'Relation_description': ['Hooke\'s law'],
-                'Relation_formulation': ['Stress strain'],
-                'Representation': 'Finite volumes'
-            }
+            "Physics": {
+                "Type": "Continuum",
+                "Entity": "Finite volume",
+                "Equation": ["Equilibrium"],
+                "Equation_quantities": ["Displacement"],
+                "Relation_description": ["Hooke's law"],
+                "Relation_formulation": ["Stress strain"],
+                "Representation": "Finite volumes"
+            },
+            "Execution": {
+                'ID': '0',
+                'Use_case_ID': '0',
+                'Task_ID': '0'
+            },
         }
         super().__init__(metadata=metadata)
         self.E = 30.0e+9  # ceramics
@@ -1015,10 +1074,10 @@ class MechanicalModel(mupif.model.Model):
         self.dirichletModelEdges = []
         self.loadModelEdges = []
 
-        self.xl = None
-        self.yl = None
-        self.nx = None
-        self.ny = None
+        self.xl = 5
+        self.yl = 1
+        self.nx = 20
+        self.ny = 8
 
         self.mesh = None
         self.dirichletBCs = None
@@ -1029,24 +1088,44 @@ class MechanicalModel(mupif.model.Model):
         self.integral = 0.0
         self.T = None
 
-    def initialize(self, file='', workdir='', metadata={}, validateMetaData=False):
-        super().initialize(file, workdir, metadata, validateMetaData)
+        self.input_file = None
 
-        if self.file != "":
-            self.readInput()
+    def initialize(self, workdir='', metadata=None, validateMetaData=True, **kwargs):
+        super().initialize(workdir=workdir, metadata=metadata, validateMetaData=validateMetaData, **kwargs)
+
+    def set(self, obj, objectID=""):
+        if obj.isInstance(mp.PyroFile):
+            if obj.getDataID() == mp.DataID.ID_InputFile:
+                print("Downloading the input file..")
+                mupif.PyroFile.copy(obj, self.workDir + os.path.sep + 'smin.in')
+                print("Download finished.")
+                self.readInput(self.workDir + os.path.sep + 'smin.in')
+
+        if obj.isInstance(mp.Field):
+            if obj.getFieldID() == mupif.DataID.FID_Temperature:
+                self.temperatureField = obj
+
+        if obj.isInstance(mp.Property):
+            if obj.getPropertyID() == mupif.DataID.FID_Displacement:
+                # Dirichlet
+                edge_ids = ['Dirichlet bottom', 'Dirichlet right', 'Dirichlet top', 'Dirichlet left']
+                for edge_id in edge_ids:
+                    if objectID == edge_id:
+                        edge_index = edge_ids.index(edge_id)+1
+                        self.dirichletModelEdges.append(edge_index) # value ignored
 
     def getCriticalTimeStep(self):
-        return .4*mp.Q.s
+        return .4*mp.U.s
 
     def getAssemblyTime(self, tstep):
         return tstep.getTime()
 
-    def readInput(self):
+    def readInput(self, filename):
 
         self.dirichletModelEdges = []
         self.loadModelEdges = []
         try:
-            f = open(self.workDir + os.path.sep + self.file, 'r')
+            f = open(filename, 'r')
             # size
             line = getline(f)
             size = line.split()
@@ -1155,8 +1234,8 @@ class MechanicalModel(mupif.model.Model):
 
         # print "loc:", self.loc
 
-    def getField(self, fieldID, time, objectID=0):
-        if fieldID == mupif.FieldID.FID_Displacement:
+    def get(self, objectTypeID, time=None, objectID=""):
+        if objectTypeID == mupif.DataID.FID_Displacement:
             values = []
             for i in range(self.mesh.getNumberOfVertices()):
                 if time.getValue() == 0.0:  # put zeros everywhere
@@ -1169,7 +1248,7 @@ class MechanicalModel(mupif.model.Model):
 
             return mupif.field.Field(
                 mesh=self.mesh,
-                fieldID=mupif.FieldID.FID_Displacement,
+                fieldID=mupif.DataID.FID_Displacement,
                 valueType=mupif.ValueType.Vector,
                 unit=mp.U.m,
                 time=time,
@@ -1178,12 +1257,7 @@ class MechanicalModel(mupif.model.Model):
         else:
             raise mupif.apierror.APIError('Unknown field ID')
 
-    def setField(self, field, fieldID=0):
-        if field.getFieldID() == mupif.FieldID.FID_Temperature:
-            self.temperatureField = field
-
     def solveStep(self, tstep, stageID=0, runInBackground=False):
-        # self.readInput()
         self.prepareTask()
         mesh = self.mesh
         if tstep and tstep.getNumber() == 0:  # assign mesh only for 0th time step
@@ -1259,13 +1333,13 @@ class MechanicalModel(mupif.model.Model):
                         A_e[i, j] += K[i, j] * dv
 
                         # temperature load if temperature field registered
-                if self.temperatureField:
+                if self.temperatureField is not None:
                     t = self.temperatureField.evaluate(x)
                     et = np.zeros((3, 1))
                     et[0] = self.alpha * t.getValue()[0]
                     et[1] = self.alpha * t.getValue()[0]
                     et[2] = 0.0
-                    b_e = np.dot(Grad.T, np.dot(D, et)) * dv
+                    b_e += np.dot(Grad.T, np.dot(D, et)) * dv
             # print "A_e :",A_e
             # print "b_e :",b_e
 
